@@ -96,89 +96,6 @@ describe('The `serverless-api-stage` plugin', function () {
             beforeEach(function () {
                 pluginInstance.hooks['before:deploy:deploy']();
             });
-            it('Adds an IAM Role resource to the CloudFormation template', function () {
-                expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.IamRoleApiGatewayCloudwatchLogRole).to.deep.equal({
-                    Type: 'AWS::IAM::Role',
-                    Properties: {
-                        AssumeRolePolicyDocument: {
-                            Version: '2012-10-17',
-                            Statement: [
-                                {
-                                    Effect: 'Allow',
-                                    Principal: {
-                                        Service: [
-                                            'apigateway.amazonaws.com'
-                                        ]
-                                    },
-                                    Action: [
-                                        'sts:AssumeRole'
-                                    ]
-                                }
-                            ]
-                        },
-                        Policies: [
-                            {
-                                PolicyName: {
-                                    'Fn::Join': [
-                                        '-',
-                                        [
-                                            'testing',
-                                            'service',
-                                            'apiGatewayLogs'
-                                        ]
-                                    ]
-                                },
-                                PolicyDocument: {
-                                    Version: '2012-10-17',
-                                    Statement: [
-                                        {
-                                            Effect: 'Allow',
-                                            Action: [
-                                                'logs:CreateLogGroup',
-                                                'logs:CreateLogStream',
-                                                'logs:DescribeLogGroups',
-                                                'logs:DescribeLogStreams',
-                                                'logs:PutLogEvents',
-                                                'logs:GetLogEvents',
-                                                'logs:FilterLogEvents'
-                                            ],
-                                            Resource: '*'
-                                        }
-                                    ]
-                                }
-                            }
-                        ],
-                        Path: '/',
-                        RoleName: {
-                            'Fn::Join': [
-                                '-',
-                                [
-                                    'service',
-                                    'testing',
-                                    'test-region',
-                                    'apiGatewayLogRole'
-                                ]
-                            ]
-                        }
-                    }
-                });
-            });
-            it('Adds an API Gateway Account resource to the CloudFormation template', function () {
-                expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.ApiGatewayAccount).to.deep.equal({
-                    Type: 'AWS::ApiGateway::Account',
-                    Properties: {
-                        CloudWatchRoleArn: {
-                            'Fn::GetAtt': [
-                                'IamRoleApiGatewayCloudwatchLogRole',
-                                'Arn'
-                            ]
-                        }
-                    },
-                    DependsOn: [
-                        'IamRoleApiGatewayCloudwatchLogRole'
-                    ]
-                });
-            });
             it('Adds an API Gateway Stage resource to the CloudFormation template with specified variables and settings', function () {
                 expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.ApiGatewayStageTesting).to.deep.equal({
                     Type: 'AWS::ApiGateway::Stage',
@@ -224,11 +141,11 @@ describe('The `serverless-api-stage` plugin', function () {
             });
         });
     });
-    describe('With a `stageSettings` custom property that specifies `ClientCertificateId`', function () {
+    describe('With a `stageSettings` custom property that specifies `CreateCloudwatchLogRole`', function () {
         let serverless, pluginInstance;
         beforeEach(function () {
             serverless = mockServerless('service', 'testing', 'Deployment', {
-                ClientCertificateId: 'id-of-certificate'
+                CreateCloudwatchLogRole: true
             });
             pluginInstance = new ApiStagePlugin(serverless);
         });
@@ -334,6 +251,55 @@ describe('The `serverless-api-stage` plugin', function () {
                         DeploymentId: {
                             Ref: 'Deployment'
                         },
+                        ClientCertificateId: undefined,
+                        DocumentationVersion: undefined,
+                        Variables: {},
+                        MethodSettings: [
+                            {
+                                DataTraceEnabled: true,
+                                HttpMethod: '*',
+                                ResourcePath: '/*',
+                                MetricsEnabled: false
+                            }
+                        ]
+                    }
+                });
+            });
+            it('Removes the `StageName` property of the API Gateway Deployment resource', function () {
+                expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.Deployment.Properties.StageName).to.equal(undefined);
+            });
+            it('Logs messages', function () {
+                expect(serverless.cli.log.calledTwice).to.equal(true);
+            });
+        });
+    });
+    describe('With a `stageSettings` custom property that specifies `ClientCertificateId`', function () {
+        let serverless, pluginInstance;
+        beforeEach(function () {
+            serverless = mockServerless('service', 'testing', 'Deployment', {
+                ClientCertificateId: 'id-of-certificate'
+            });
+            pluginInstance = new ApiStagePlugin(serverless);
+        });
+        describe('When the `before:deploy:deploy` hook is executed', function () {
+            beforeEach(function () {
+                pluginInstance.hooks['before:deploy:deploy']();
+            });
+            it('Adds an API Gateway Stage resource to the CloudFormation template with specified variables and settings', function () {
+                expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.ApiGatewayStageTesting).to.deep.equal({
+                    Type: 'AWS::ApiGateway::Stage',
+                    Properties: {
+                        StageName: 'testing',
+                        Description: 'testing stage of service',
+                        RestApiId: {
+                            Ref: 'ApiGatewayRestApi'
+                        },
+                        AccessLogSetting: {},
+                        CacheClusterEnabled: false,
+                        CacheClusterSize: '0.5',
+                        DeploymentId: {
+                            Ref: 'Deployment'
+                        },
                         ClientCertificateId: 'id-of-certificate',
                         DocumentationVersion: undefined,
                         Variables: {},
@@ -367,89 +333,6 @@ describe('The `serverless-api-stage` plugin', function () {
         describe('When the `before:deploy:deploy` hook is executed', function () {
             beforeEach(function () {
                 pluginInstance.hooks['before:deploy:deploy']();
-            });
-            it('Adds an IAM Role resource to the CloudFormation template', function () {
-                expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.IamRoleApiGatewayCloudwatchLogRole).to.deep.equal({
-                    Type: 'AWS::IAM::Role',
-                    Properties: {
-                        AssumeRolePolicyDocument: {
-                            Version: '2012-10-17',
-                            Statement: [
-                                {
-                                    Effect: 'Allow',
-                                    Principal: {
-                                        Service: [
-                                            'apigateway.amazonaws.com'
-                                        ]
-                                    },
-                                    Action: [
-                                        'sts:AssumeRole'
-                                    ]
-                                }
-                            ]
-                        },
-                        Policies: [
-                            {
-                                PolicyName: {
-                                    'Fn::Join': [
-                                        '-',
-                                        [
-                                            'testing',
-                                            'service',
-                                            'apiGatewayLogs'
-                                        ]
-                                    ]
-                                },
-                                PolicyDocument: {
-                                    Version: '2012-10-17',
-                                    Statement: [
-                                        {
-                                            Effect: 'Allow',
-                                            Action: [
-                                                'logs:CreateLogGroup',
-                                                'logs:CreateLogStream',
-                                                'logs:DescribeLogGroups',
-                                                'logs:DescribeLogStreams',
-                                                'logs:PutLogEvents',
-                                                'logs:GetLogEvents',
-                                                'logs:FilterLogEvents'
-                                            ],
-                                            Resource: '*'
-                                        }
-                                    ]
-                                }
-                            }
-                        ],
-                        Path: '/',
-                        RoleName: {
-                            'Fn::Join': [
-                                '-',
-                                [
-                                    'service',
-                                    'testing',
-                                    'test-region',
-                                    'apiGatewayLogRole'
-                                ]
-                            ]
-                        }
-                    }
-                });
-            });
-            it('Adds an API Gateway Account resource to the CloudFormation template', function () {
-                expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.ApiGatewayAccount).to.deep.equal({
-                    Type: 'AWS::ApiGateway::Account',
-                    Properties: {
-                        CloudWatchRoleArn: {
-                            'Fn::GetAtt': [
-                                'IamRoleApiGatewayCloudwatchLogRole',
-                                'Arn'
-                            ]
-                        }
-                    },
-                    DependsOn: [
-                        'IamRoleApiGatewayCloudwatchLogRole'
-                    ]
-                });
             });
             it('Adds an API Gateway Stage resource to the CloudFormation template with specified variables and settings', function () {
                 expect(serverless.service.provider.compiledCloudFormationTemplate.Resources.ApiGatewayStageTesting).to.deep.equal({

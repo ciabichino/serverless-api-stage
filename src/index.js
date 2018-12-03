@@ -9,99 +9,102 @@ module.exports = function (serverless) {
 
             const logRoleLogicalName = 'IamRoleApiGatewayCloudwatchLogRole';
             const stageSettings = serverless.service.custom.stageSettings || {};
+            const createCloudwatchLogRole = !!stageSettings.CreateCloudwatchLogRole;
             const template = serverless.service.provider.compiledCloudFormationTemplate;
             const deployments = _(template.Resources)
                 .pickBy((resource) => resource.Type === 'AWS::ApiGateway::Deployment');
 
             // TODO Handle other resources - ApiKey, BasePathMapping, UsagePlan, etc
             const methodSettings = [].concat(stageSettings.MethodSettings);
-            _.extend(template.Resources,
-                // Enable logging: IAM role for API Gateway, and API Gateway account settings
-                {
-                    [logRoleLogicalName]: {
-                        Type: 'AWS::IAM::Role',
-                        Properties: {
-                            AssumeRolePolicyDocument: {
-                                Version: '2012-10-17',
-                                Statement: [
+            if (createCloudwatchLogRole) {
+                _.extend(template.Resources,
+                    // Enable logging: IAM role for API Gateway, and API Gateway account settings
+                    {
+                        [logRoleLogicalName]: {
+                            Type: 'AWS::IAM::Role',
+                            Properties: {
+                                AssumeRolePolicyDocument: {
+                                    Version: '2012-10-17',
+                                    Statement: [
+                                        {
+                                            Effect: 'Allow',
+                                            Principal: {
+                                                Service: [
+                                                    'apigateway.amazonaws.com'
+                                                ]
+                                            },
+                                            Action: [
+                                                'sts:AssumeRole'
+                                            ]
+                                        }
+                                    ]
+                                },
+                                Policies: [
                                     {
-                                        Effect: 'Allow',
-                                        Principal: {
-                                            Service: [
-                                                'apigateway.amazonaws.com'
+                                        PolicyName: {
+                                            'Fn::Join': [
+                                                '-',
+                                                [
+                                                    serverless.getProvider('aws').getStage(),
+                                                    serverless.service.service,
+                                                    'apiGatewayLogs'
+                                                ]
                                             ]
                                         },
-                                        Action: [
-                                            'sts:AssumeRole'
-                                        ]
-                                    }
-                                ]
-                            },
-                            Policies: [
-                                {
-                                    PolicyName: {
-                                        'Fn::Join': [
-                                            '-',
-                                            [
-                                                serverless.getProvider('aws').getStage(),
-                                                serverless.service.service,
-                                                'apiGatewayLogs'
+                                        PolicyDocument: {
+                                            Version: '2012-10-17',
+                                            Statement: [
+                                                {
+                                                    Effect: 'Allow',
+                                                    Action: [
+                                                        'logs:CreateLogGroup',
+                                                        'logs:CreateLogStream',
+                                                        'logs:DescribeLogGroups',
+                                                        'logs:DescribeLogStreams',
+                                                        'logs:PutLogEvents',
+                                                        'logs:GetLogEvents',
+                                                        'logs:FilterLogEvents'
+                                                    ],
+                                                    Resource: '*'
+                                                }
                                             ]
-                                        ]
-                                    },
-                                    PolicyDocument: {
-                                        Version: '2012-10-17',
-                                        Statement: [
-                                            {
-                                                Effect: 'Allow',
-                                                Action: [
-                                                    'logs:CreateLogGroup',
-                                                    'logs:CreateLogStream',
-                                                    'logs:DescribeLogGroups',
-                                                    'logs:DescribeLogStreams',
-                                                    'logs:PutLogEvents',
-                                                    'logs:GetLogEvents',
-                                                    'logs:FilterLogEvents'
-                                                ],
-                                                Resource: '*'
-                                            }
-                                        ]
+                                        }
                                     }
-                                }
-                            ],
-                            Path: '/',
-                            RoleName: {
-                                'Fn::Join': [
-                                    '-',
-                                    [
-                                        serverless.service.service,
-                                        serverless.getProvider('aws').getStage(),
-                                        serverless.getProvider('aws').getRegion(),
-                                        'apiGatewayLogRole'
+                                ],
+                                Path: '/',
+                                RoleName: {
+                                    'Fn::Join': [
+                                        '-',
+                                        [
+                                            serverless.service.service,
+                                            serverless.getProvider('aws').getStage(),
+                                            serverless.getProvider('aws').getRegion(),
+                                            'apiGatewayLogRole'
+                                        ]
                                     ]
-                                ]
-                            }
-                        }
-                    },
-                    ApiGatewayAccount: {
-                        Type: 'AWS::ApiGateway::Account',
-                        Properties: {
-                            CloudWatchRoleArn: {
-                                'Fn::GetAtt': [
-                                    logRoleLogicalName,
-                                    'Arn'
-                                ]
+                                }
                             }
                         },
-                        DependsOn: [
-                            logRoleLogicalName
-                        ]
-                    }
-                },
+                        ApiGatewayAccount: {
+                            Type: 'AWS::ApiGateway::Account',
+                            Properties: {
+                                CloudWatchRoleArn: {
+                                    'Fn::GetAtt': [
+                                        logRoleLogicalName,
+                                        'Arn'
+                                    ]
+                                }
+                            },
+                            DependsOn: [
+                                logRoleLogicalName
+                            ]
+                        }
+                    });
+                }
 
                 // Stages, one per deployment.  TODO Support multiple stages?
-                deployments
-                    .mapValues((deployment, deploymentKey) => ({
+                _.extend(template.Resources,
+                    deployments.mapValues((deployment, deploymentKey) => ({
                         Type: 'AWS::ApiGateway::Stage',
                         Properties: {
                             StageName: deployment.Properties.StageName,
